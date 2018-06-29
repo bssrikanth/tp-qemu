@@ -1,13 +1,14 @@
 import logging
 import os
-
+import time
 from avocado.utils import download
 
 from virttest import error_context
 from virttest import utils_test
 from virttest import utils_misc
-
-from generic.tests import kdump
+from virttest import utils_net
+from avocado.core import exceptions
+from virttest.utils_iptables import Iptables
 
 
 @error_context.context_aware
@@ -24,106 +25,46 @@ def run(test, params, env):
     :param params: Dictionary with the test parameters
     :param env: Dictionary with test environment.
     """
-    def install_stress_app(session):
-        """
-        Install stress app in guest.
-        """
-        if session.cmd_status(params.get("app_check_cmd", "true")) == 0:
-            logging.info("Stress app already installed in guest.")
-            return
-
-        link = params.get("download_link")
-        md5sum = params.get("pkg_md5sum")
-        tmp_dir = params.get("tmp_dir", "/var/tmp")
-        install_cmd = params.get("install_cmd")
-
-        logging.info("Fetch package: '%s'" % link)
-        pkg_name = os.path.basename(link)
-        pkg_path = os.path.join(test.tmpdir, pkg_name)
-        download.get_file(link, pkg_path, hash_expected=md5sum)
-        vm.copy_files_to(pkg_path, tmp_dir)
-
-        logging.info("Install app: '%s' in guest." % install_cmd)
-        s, o = session.cmd_status_output(install_cmd, timeout=300)
-        if s != 0:
-            test.error("Fail to install stress app(%s)" % o)
-
-        logging.info("Install app successed")
-
-    def start_stress(session):
-        """
-        Load stress in guest.
-        """
-        error_context.context("Load stress in guest", logging.info)
-        stress_type = params.get("stress_type", "none")
-
-        if stress_type == "none":
-            return
-
-        if stress_type == "netperf":
-            bg = ""
-            bg_stress_test = params.get("run_bgstress")
-
-            bg = utils_misc.InterruptedThread(utils_test.run_virt_sub_test,
-                                              (test, params, env),
-                                              {"sub_type": bg_stress_test})
-            bg.start()
-
-        if stress_type == "io":
-            install_stress_app(session)
-
-            cmd = params.get("start_cmd")
-            logging.info("Launch stress app in guest with command: '%s'" % cmd)
-            session.sendline(cmd)
-
-        running = utils_misc.wait_for(lambda: stress_running(session),
-                                      timeout=150, step=5)
-        if not running:
-            test.error("Stress isn't running")
-
-        logging.info("Stress running now")
-
-    def stress_running(session):
-        """
-        Check stress app really run in background.
-        """
-        cmd = params.get("kdump_check_cmd")
-        status = session.cmd_status(cmd, timeout=120)
-        return status == 0
-
-    vm = env.get_vm(params["main_vm"])
-    vm.verify_alive()
 
     timeout = float(params.get("login_timeout", 240))
-    crash_timeout = float(params.get("crash_timeout", 360))
-    def_kernel_param_cmd = ("grubby --update-kernel=`grubby --default-kernel`"
-                            " --args=crashkernel=128M@16M")
-    kernel_param_cmd = params.get("kernel_param_cmd", def_kernel_param_cmd)
-    def_kdump_enable_cmd = "chkconfig kdump on && service kdump restart"
-    kdump_enable_cmd = params.get("kdump_enable_cmd", def_kdump_enable_cmd)
-    def_crash_kernel_prob_cmd = "grep -q 1 /sys/kernel/kexec_crash_loaded"
-    crash_kernel_prob_cmd = params.get("crash_kernel_prob_cmd",
-                                       def_crash_kernel_prob_cmd)
-
-    session = kdump.kdump_enable(vm, vm.name,
-                                 crash_kernel_prob_cmd, kernel_param_cmd,
-                                 kdump_enable_cmd, timeout)
+    vm = env.get_vm(params["main_vm"])
+    vm.verify_alive()
+    kdump_guest = utils_test.Kdump(test, params)
+    netperf_server_cmd = params.get("netperf_server_cmd", "netserver -p {0}")
+    netperf_client_cmd = params.get("netperf_client_cmd", "netperf -H {0} -p {1} -l {2} -t {3}")
+    ports = params.get("ports", "16604")
+    stress_duration = params.get("stress_duration", "20")
+    test_protocol = params.get("test_protocols", "TCP_STREAM")
+    ip_rule = params.get("ip_rule", "")
+    netperf_para_sess = params.get("netperf_para_sessions", "1")
+    session = vm.wait_for_login(timeout=timeout)
+    kdump_guest.preprocess_kdump(test, vm, timeout)
+    kdump_guest.kdump_enable(test, vm, timeout)
 
     try:
-        start_stress(session)
-
+        params['server_pwd'] = params.get("password")
+        params['stress_cmds_netperf'] = netperf_server_cmd.format(ports)
+#        if ip_rule:
+#            for ip_addr in [vm.get_address(), utils_net.get_host_ip_address(params)]:
+#                params['server_ip'] = ip_addr
+#                Iptables.setup_or_cleanup_iptables_rules([ip_rule], params=params, cleanup=False)
+#                params['server_pwd'] = params.get("hostpassword")
+#        stress_host = utils_test.Stress("netperf", params)
+#        stress_host.load_stress_tool()
+        params['server_ip'] = vm.get_address()
+        params['server_pwd'] = params.get("password")
+        params['stress_cmds_netperf'] = netperf_client_cmd.format(utils_net.get_host_ip_address(params), ports, stress_duration, test_protocol)
+#        stress_client = utils_test.VMStress(vm, "netperf", params)
+#        for num in xrange(int(netperf_para_sess)):
+#            stress_client.load_stress_tool()
         error_context.context("Kdump Testing, force the Linux kernel to crash",
                               logging.info)
-        crash_cmd = params.get("crash_cmd", "echo c > /proc/sysrq-trigger")
-        if crash_cmd == "nmi":
-            kdump.crash_test(vm, None, crash_cmd, timeout)
-        else:
-            # trigger crash for each vcpu
-            nvcpu = int(params.get("smp", 1))
-            for i in range(nvcpu):
-                kdump.crash_test(vm, i, crash_cmd, timeout)
-
-        kdump.check_vmcore(vm, session, crash_timeout)
+        kdump_guest.crash_test(test, vm, timeout)
+#        vm.wait_for_login()
+#        stress_host.clean()
+#        stress_client.clean()
+    except exceptions.TestError  as error:
+        logging.error(error)
     finally:
         session.close()
         vm.destroy()
