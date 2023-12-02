@@ -44,14 +44,19 @@ def run(test, params, env):
     session = vm.wait_for_login(timeout=login_timeout)
 
     free_memory = utils_memory.read_from_meminfo("MemFree")
-    hugepage_size = utils_memory.read_from_meminfo("Hugepagesize")
+    hugepage_size = int(utils_memory.read_from_meminfo("Hugepagesize"))
     mem = params.get("mem")
     vmsm = int(mem) + 128
+    test.log.info(free_memory)
+    test.log.info(vmsm)
     hugetlbfs_path = params.get("hugetlbfs_path", "/proc/sys/vm/nr_hugepages")
+    test.log.info(hugetlbfs_path)
     if vmsm < int(free_memory) / 1024:
-        nr_hugetlbfs = vmsm * 1024 / int(hugepage_size)
+        nr_hugetlbfs = int(vmsm * 1024 / hugepage_size)
     else:
         nr_hugetlbfs = None
+    test.log.info(nr_hugetlbfs)
+    test.log.info(type(nr_hugetlbfs))
     # Get dd speed in host
     start_time = time.time()
     cmd = "dd if=/dev/urandom of=/tmp/speed_test bs=4K count=256"
@@ -71,14 +76,16 @@ def run(test, params, env):
         s, o = session.cmd_status_output("cat /proc/meminfo")
         mem_free_filter = r"MemFree:\s+(.\d+)\s+(\w+)"
         guest_mem_free, guest_unit = re.findall(mem_free_filter, o)[0]
+        test.log.info(guest_mem_free)
+        test.log.info(guest_unit)
         if re.findall("[kK]", guest_unit):
-            guest_mem_free = str(int(guest_mem_free) / 1024)
+            guest_mem_free = str(int(guest_mem_free) // 1024)
         elif re.findall("[gG]", guest_unit):
             guest_mem_free = str(int(guest_mem_free) * 1024)
         elif re.findall("[mM]", guest_unit):
             pass
         else:
-            guest_mem_free = str(int(guest_mem_free) / 1024 / 1024)
+            guest_mem_free = str(int(guest_mem_free) // 1024 // 1024)
 
         file_size = min(1024, int(guest_mem_free) / 2)
         cmd = "mount -t tmpfs -o size=%sM none /mnt" % file_size

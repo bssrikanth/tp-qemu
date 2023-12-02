@@ -68,7 +68,7 @@ def run(test, params, env):
         feature_file = open(feature_path, 'r')
         feature_file_contents = feature_file.read()
         feature_file.close()
-        possible_values = test_config.value_listed(feature_file_contents)
+        possible_values = re.split("\[|\]|\n+|\s+", feature_file_contents)
 
         if 'yes' in possible_values:
             on_action = 'yes'
@@ -118,7 +118,7 @@ def run(test, params, env):
         finally:
             process.run("umount %s" % mem_path, shell=True)
 
-    test_config = test_setup.TransparentHugePageConfig(test, params)
+    test_config = test_setup.TransparentHugePageConfig(test, params, env)
     test.log.info("Defrag test start")
     login_timeout = float(params.get("login_timeout", 360))
     mem_path = os.path.join("/tmp", "thp_space")
