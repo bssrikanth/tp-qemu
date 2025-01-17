@@ -73,8 +73,8 @@ def run(test, params, env):
         failures.append(e_msg)
 
     # Protect system from oom killer
-    if get_mem_status("MemFree", "guest") // 1024 < mem:
-        mem = get_mem_status("MemFree", "guest") // 1024
+    if int(get_mem_status('MemFree', 'guest')) / 1024 < mem:
+        mem = int(get_mem_status('MemFree', 'guest')) // 1024
 
     session.cmd("mkdir -p %s" % mem_path)
 

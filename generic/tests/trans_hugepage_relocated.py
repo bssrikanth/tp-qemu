@@ -47,7 +47,7 @@ def run(test, params, env):
     session = vm.wait_for_login(timeout=login_timeout)
 
     free_memory = utils_memory.read_from_meminfo("MemFree")
-    hugepage_size = utils_memory.read_from_meminfo("Hugepagesize")
+    hugepage_size = int(utils_memory.read_from_meminfo("Hugepagesize"))
     mem = params.get_numeric("mem")
     vmsm = mem + 128
     hugetlbfs_path = params.get("hugetlbfs_path", "/proc/sys/vm/nr_hugepages")
@@ -74,13 +74,13 @@ def run(test, params, env):
     mem_free_filter = r"MemFree:\s+(.\d+)\s+(\w+)"
     guest_mem_free, guest_unit = re.findall(mem_free_filter, o)[0]
     if re.findall("[kK]", guest_unit):
-        guest_mem_free = int(guest_mem_free) / 1024
+        guest_mem_free = int(guest_mem_free) // 1024
     elif re.findall("[gG]", guest_unit):
         guest_mem_free = int(guest_mem_free) * 1024
     elif re.findall("[mM]", guest_unit):
         pass
     else:
-        guest_mem_free = int(guest_mem_free) / 1024 / 1024
+        guest_mem_free = int(guest_mem_free) // 1024 // 1024
 
     file_size = min(1024, int(guest_mem_free / 2))
     cmd = "mount -t tmpfs -o size=%sM none /mnt" % file_size
