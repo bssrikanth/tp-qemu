@@ -23,15 +23,22 @@ def run(test, params, env):
     :param env: Dictionary with test environment.
     """
     qemu_binary = utils_misc.get_qemu_binary(params)
+    qemu_mode = params.get("qemu_mode", "kvm")
+    if qemu_mode not in ["emulate", "kvm"]:
+        test.error("Invalid qemu_mode: %s. Valid options are 'emulate' or 'kvm'." % qemu_mode)
     qmp_cmds = [
         '{"execute": "qmp_capabilities"}',
         '{"execute": "query-cpu-definitions", "id": "RAND91"}',
         '{"execute": "quit"}',
     ]
-    cmd = (
-        "echo -e '{0}' | {1} -qmp stdio -vnc none -M none | grep return |"
-        "grep RAND91".format(r"\n".join(qmp_cmds), qemu_binary)
-    )
+    if qemu_mode == "kvm":
+        cmd = ("echo -e '{0}' | {1} -qmp stdio -vnc none -M none -enable-kvm |"
+                "grep return | grep RAND91".format
+                (r"\n".join(qmp_cmds), qemu_binary))
+    else: # emulate
+        cmd = ("echo -e '{0}' | {1} -qmp stdio -vnc none -M none |"
+                "grep return | grep RAND91".format
+                (r"\n".join(qmp_cmds), qemu_binary))
     output = process.run(
         cmd, timeout=10, ignore_status=True, shell=True, verbose=False
     ).stdout_text
