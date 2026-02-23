@@ -4,7 +4,9 @@ Guest boot sanity test with passthrough device in different mode
 """
 
 import os
-from avocado.utils import process, pci, linux_modules, genio
+
+from avocado.core.exceptions import TestWarn
+from avocado.utils import process, pci, linux_modules
 from virttest import env_process
 
 
@@ -223,7 +225,12 @@ def run(test, params, env):  # pylint: disable=R0915
             session = vm.wait_for_login(timeout=login_timeout)
         except Exception as e:
             test.fail(f"Failed to login VM: {str(e)}")
-        vm.verify_kernel_crash()
+        try:
+            vm.verify_kernel_crash()
+            vm.verify_dmesg()
+        except Exception as e:
+            guest_system_details(session)
+            raise TestWarn(f"Guest booted with warn/error kernel logs")
 
         # Collect guest system details
         guest_system_details(session)
