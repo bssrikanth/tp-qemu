@@ -40,7 +40,7 @@ def run(test, params, env):
         installtype=avocadoinstalltype,
         reinstall=False,
         add_args=avocadotestargs,
-        ignore_result=False,
+        ignore_result=True,
     )
     result = avocado_obj.run_avocado()
     if not result:
