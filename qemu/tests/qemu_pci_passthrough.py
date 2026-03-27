@@ -6,8 +6,9 @@ Guest boot sanity test with passthrough device in different mode
 import os
 
 from avocado.core.exceptions import TestWarn
-from avocado.utils import process, pci, linux_modules
-from virttest import env_process
+from avocado.utils import genio, linux_modules, pci, process
+from virttest import cpu, env_process
+from virttest.utils_misc import verify_dmesg
 
 
 def run(test, params, env):  # pylint: disable=R0915
@@ -39,13 +40,15 @@ def run(test, params, env):  # pylint: disable=R0915
                    b. Host doesnot have expected mode enabled for guest - avic
                       or x2avic.
              fails if
-		1. Pci device cannot be bind to vfio_pci module for passthrough.
+                1. Pci device cannot be bind to vfio_pci module for passthrough.
                    (pci_device != "")
                 2. Unable to login to guest within login timeout.
     """
     kvm_probe_module_parameters = params.get("kvm_probe_module_parameters", "")
     login_timeout = int(params.get("login_timeout", 240))
     pci_device = params.get("pci_device", "")
+    expected_vcpus = params.get("smp_fixed", "2")
+    trace_dir = params.get("trace_dir", "/sys/kernel/tracing")
     mode = params.get("mode", "x2apic")
     driver_list = []
     session = None
@@ -71,6 +74,58 @@ def run(test, params, env):  # pylint: disable=R0915
                         test.cancel(f"Module {module} loading failed")
             elif config_status == linux_modules.ModuleConfig.BUILTIN:
                 test.log.debug(f"{config} is built-in.")
+
+        def check_x2avic_4k_vcpu_support():
+            """
+            Verify host 4k x2avic vcpus support via cpuid.
+            """
+            _, _, ecx, _ = cpu.cpuid(0x8000000A)
+
+            if (ecx & 0x40) == 0:
+                test.log.debug(f"System supports up to 512 vCPUs only in x2AVIC mode. Cannot boot with {expected_vcpus} vCPUs.")
+                test.cancel("System does not support x2avic 4k vcpus.")
+
+        def setup_kvm_exit_ftrace():
+            """
+            Configure ftrace to capture KVM exit events for AVIC validation.
+            If the exit reason is `avic_incomplete_ipi`, it indicates
+            that guest interrupts are accelerated (AVIC enabled).
+            """
+            try:
+                if not os.path.exists(trace_dir):
+                    test.cancel("ftrace not available at {}".format(trace_dir))
+                genio.write_file_or_fail(f"{trace_dir}/tracing_on", "0")
+                genio.write_file_or_fail(f"{trace_dir}/trace", "")
+                genio.write_file_or_fail(f"{trace_dir}/events/kvm/kvm_exit/enable", "1")
+                genio.write_file_or_fail(f"{trace_dir}/events/kvm/kvm_exit/filter", "exit_reason==0x401")
+                genio.write_file_or_fail(f"{trace_dir}/tracing_on", "1")
+            except Exception as err:
+                test.cancel(f"Failed to configure ftrace: {err}")
+
+        def check_kvm_exit_ftrace():
+            """
+            Validate AVIC hardware acceleration via ftrace output analysis.
+            """
+            try:
+                genio.write_file_or_fail(f"{trace_dir}/tracing_on", "0")
+                trace_output = genio.read_file(f"{trace_dir}/trace")
+
+                if "avic_incomplete_ipi" not in trace_output:
+                    test.cancel("Expected interrupt acceleration is inhibited and not used for the guest")
+            except Exception as err:
+                test.cancel(f"Failed to read ftrace output: {err}")
+
+        def disable_kvm_exit_trace():
+            """
+            Disable KVM exit tracing and reset ftrace configuration.
+            """
+            try:
+                genio.write_file_or_fail(f"{trace_dir}/tracing_on", "0")
+                genio.write_file_or_fail(f"{trace_dir}/events/kvm/kvm_exit/enable", "0")
+                genio.write_file_or_fail(f"{trace_dir}/events/kvm/kvm_exit/filter", "0")
+                genio.write_file_or_fail(f"{trace_dir}/trace", "")
+            except Exception as err:
+                test.cancel(f"Failed to disable ftrace output: {err}")
 
         def check_avic_support():
             """
@@ -193,6 +248,9 @@ def run(test, params, env):  # pylint: disable=R0915
                 check_avic_support()
             if mode == "x2apic":
                 check_x2avic_support()
+                if int(expected_vcpus) > 512:
+                    check_x2avic_4k_vcpu_support()
+
             # Validate dmesg for avic and x2avic enablement
             check_dmesg_avic(mode)
 
@@ -214,6 +272,10 @@ def run(test, params, env):  # pylint: disable=R0915
                     "extra_params"
                 ] += f" -device vfio-pci,host={pci_device.split(' ')[i]}"
 
+        # Start KVM exit tracing to monitor AVIC/x2AVIC hardware interrupt acceleration.
+        if kvm_probe_module_parameters == "avic=1":
+            setup_kvm_exit_ftrace()
+
         params["start_vm"] = "yes"
         vm = env.get_vm(params["main_vm"])
         try:
@@ -225,6 +287,14 @@ def run(test, params, env):  # pylint: disable=R0915
             session = vm.wait_for_login(timeout=login_timeout)
         except Exception as e:
             test.fail(f"Failed to login VM: {str(e)}")
+
+        try:
+            actual_vcpus = int(vm.get_cpu_count())
+            if actual_vcpus != int(expected_vcpus):
+                test.fail(f"Guest vCPU count mismatch: Expected {expected_vcpus}, Actual: {actual_vcpus}.")
+        except Exception as e:
+            test.fail(f"Failed to verify VM vCPUs count: {str(e)}")
+
         try:
             vm.verify_kernel_crash()
             vm.verify_dmesg()
@@ -235,11 +305,19 @@ def run(test, params, env):  # pylint: disable=R0915
         # Collect guest system details
         guest_system_details(session)
 
+        # Validate interrupt acceleration for AVIC/X2AVIC guest via KVM exit reason tracing
+        if kvm_probe_module_parameters == "avic=1":
+            check_kvm_exit_ftrace()
+
     finally:
         if session:
             session.close()
         if vm:
             vm.destroy()
+
+        if kvm_probe_module_parameters == "avic=1":
+            disable_kvm_exit_trace()
+
         if pci_device != "" and driver_list:
             for i in range(len(pci_device.split(" "))):
                 cmd = f"lspci -s {pci_device.split(' ')[i]}"
