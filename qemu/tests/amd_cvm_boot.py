@@ -12,7 +12,8 @@ def run(test, params, env):
     Steps:
     1. Verify host SEV/SEV-ES/SEV-SNP support via
        /sys/module/kvm_amd/parameters.
-    2. Check for valid OVMF BIOS path.
+    2. Check for valid firmware: OVMF BIOS path, or when enable_igvm=yes,
+       the IGVM file (igvm_path/igvm_filename) used by the framework.
     3. Validate host CPU (Milan, Genoa, Turin).
     4. Boot a SEV or SEV-ES or SEV-SNP CVM VM.
     5. Verify CVM enablement in guest via dmesg.
@@ -22,7 +23,9 @@ def run(test, params, env):
         - cvm_module_path: Path to SEV* status file
             (e.g., /sys/module/kvm_amd/parameters/sev).
         - module_status: Expected SEV*/SEV-SNP status (e.g., ["1", "Y"]).
-        - bios_path: Path to OVMF BIOS for CVM.
+        - bios_path: Path to OVMF BIOS for CVM (not used when enable_igvm=yes).
+        - enable_igvm: When "yes", skip OVMF bios_path check; firmware comes
+          from IGVM (see igvm_path, igvm_filename in avocado-vt base.cfg).
         - main_vm: Name of the VM to test.
         - vm_secure_guest_type: Type of CVM ("sev" "seves" or "snp").
         - vm_sev_policy: Expected SEV/SEV-ES/SNP policy value.
@@ -50,9 +53,20 @@ def run(test, params, env):
                 f"Host support for {cvm_type} capability check failed.")
     else:
         test.cancel(f"Host support for {cvm_type} capability check failed.")
-    biospath = params.get("bios_path")
-    if not os.path.isfile(biospath):
-        test.cancel("bios_path not exist %s." % biospath)
+    enable_igvm = params.get("enable_igvm") == "yes"
+    if enable_igvm:
+        igvm_path = params.get("igvm_path", "/usr/share/coconut-svsm")
+        igvm_filename = params.get("igvm_filename", "coconut-qemu.igvm")
+        igvm_file_path = os.path.join(igvm_path, igvm_filename)
+        if not os.path.isfile(igvm_file_path):
+            test.cancel(
+                "IGVM file not found: %s (set igvm_path/igvm_filename to match "
+                "your install)." % igvm_file_path
+            )
+    else:
+        biospath = params.get("bios_path")
+        if not biospath or not os.path.isfile(biospath):
+            test.cancel("bios_path not exist %s." % biospath)
     family_id = int(cpu.get_family())
     model_id = int(cpu.get_model())
     supported_cpus = {
