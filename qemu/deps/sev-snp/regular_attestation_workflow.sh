@@ -10,11 +10,28 @@ check_status() {
 # Check for the required CPU model parameter
 if [[ -z "$1" ]]; then
     echo "Error: cpu_model parameter is required."
-    echo "Usage: $0 <cpu_model>"
+    echo "Usage: $0 <cpu_model> [vmpl]"
+    echo "  vmpl: optional, request a report at this VMPL level"
+    echo "        'Allowed values: 0, 1, 2, or 3."
     exit 1
 fi
 
 cpu_model="$1"
+vmpl="${2:-}"
+report_extra_args=""
+if [[ -n "$vmpl" ]]; then
+    if [[ ! "$vmpl" =~ ^[0-9]+$ ]]; then
+        echo "Error: vmpl must be a non-negative integer (got: '$vmpl')."
+        echo "       Allowed values: 0, 1, 2, or 3."
+        exit 1
+    fi
+    if (( vmpl < 0 || vmpl > 3 )); then
+        echo "Error: vmpl out of range (got: $vmpl)."
+        echo "       SNP defines only VMPL0..VMPL3."
+        exit 1
+    fi
+    report_extra_args="--vmpl $vmpl"
+fi
 
 fetch_retry() {
     local command=$1
@@ -35,7 +52,7 @@ fetch_retry() {
 }
 
 # Verify regular attestation workflow on snp guest
-snpguest report attestation-report.bin request-data.txt --random
+snpguest report attestation-report.bin request-data.txt --random $report_extra_args
 if [[ ! -f attestation-report.bin ]]; then
     echo "attestation-report.bin not created."
     exit 1
