@@ -34,8 +34,9 @@ def run(test, params, env):
         repo_install_cmd = params.get("repo_install_cmd")
         if not repo_install_cmd:
             return
-        rhel_major_ver = _get_rhel_major_ver()
-        repo_install_cmd = repo_install_cmd % rhel_major_ver
+        # Set repo_install_cmd to fixed in cfg file, since RHEL10 need a workaroud.
+        # rhel_major_ver = _get_rhel_major_ver()
+        # repo_install_cmd = repo_install_cmd % rhel_major_ver
         session.cmd_output_safe(repo_install_cmd)
         time.sleep(5)
 
@@ -54,7 +55,7 @@ def run(test, params, env):
         if status:
             test.error("Fail to install target cpuid")
     error_context.context(
-        "Check the corresponding CPUID entries with " "the flag 'hv-avic'",
+        "Check the corresponding CPUID entries with the flag 'hv-avic'",
         test.log.info,
     )
     output = session.cmd_output(check_cpuid_entry_cmd)

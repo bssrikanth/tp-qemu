@@ -5,6 +5,8 @@ import aexpect
 from avocado.utils.wait import wait_for
 from virttest import error_context, utils_misc, utils_test
 
+from provider.win_driver_utils import install_driver_by_virtio_media
+
 LOG_JOB = logging.getLogger("avocado.test")
 
 
@@ -133,14 +135,24 @@ def run(test, params, env):
     with_events = params.get("with_events", "no") == "yes"
     debug_type = params.get_numeric("debug_type")
     events_pvpanic = params.get_numeric("events_pvpanic")
+    skip_qmp_check = params.get("skip_qmp_check", "no") == "yes"
 
     error_context.context("Boot guest with pvpanic device", test.log.info)
     vm = env.get_vm(params["main_vm"])
     vm.verify_alive()
     session = vm.wait_for_login(timeout=timeout)
+    if params["vga"] == "virtio":
+        install_driver_by_virtio_media(
+            session,
+            test,
+            devcon_path=params["devcon_path"],
+            media_type=params["virtio_win_media_type"],
+            driver_name="viogpudo",
+            device_hwid=params["viogpu_hwid"],
+        )
     if params.get("os_type") == "windows":
         error_context.context(
-            "Check if the driver is installed and " "verified", test.log.info
+            "Check if the driver is installed and verified", test.log.info
         )
         driver_name = params.get("driver_name", "pvpanic")
         session = utils_test.qemu.windrv_check_running_verifier(
@@ -172,9 +184,12 @@ def run(test, params, env):
     error_context.context("Trigger crash", test.log.info)
     trigger_crash(test, vm, params)
 
-    error_context.context("Check the panic event in qmp", test.log.info)
-    result = check_qmp_events(vm, event_check, timeout)
-    if not check_empty and not result:
-        test.fail("Did not receive panic event notification")
-    elif check_empty and result:
-        test.fail("Did receive panic event notification, but should not")
+    if skip_qmp_check:
+        test.log.info("Skipping QMP event check for i440fx machine type")
+    else:
+        error_context.context("Check the panic event in qmp", test.log.info)
+        result = check_qmp_events(vm, event_check, timeout)
+        if not check_empty and not result:
+            test.fail("Did not receive panic event notification")
+        elif check_empty and result:
+            test.fail("Did receive panic event notification, but should not")

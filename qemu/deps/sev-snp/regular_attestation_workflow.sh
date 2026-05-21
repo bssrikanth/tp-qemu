@@ -37,21 +37,21 @@ fetch_retry() {
 # Verify regular attestation workflow on snp guest
 snpguest report attestation-report.bin request-data.txt --random
 if [[ ! -f attestation-report.bin ]]; then
-    echo "Error: attestation-report.bin not created."
+    echo "attestation-report.bin not created."
     exit 1
 fi
 snpguest display report attestation-report.bin
-check_status "Error: Failed display attestation-report."
+check_status "Failed display attestation-report."
 
 # Fetch cert
 fetch_retry "snpguest fetch ca -e vcek pem ./ ${cpu_model}"
-check_status "Error: Failed to fetch CA certificate."
+check_status "Failed to fetch CA certificate."
 
 fetch_retry "snpguest fetch vcek -p ${cpu_model} pem ./ attestation-report.bin"
-check_status "Error: Failed to fetch VCEK certificate."
+check_status "Failed to fetch VCEK certificate."
 
 # Verify certs
 snpguest verify certs ./
-check_status "Error: Failed to verify certificates."
+check_status "Failed to verify certificates."
 snpguest verify attestation -p ${cpu_model} ./ attestation-report.bin
-check_status "Error: Failed to verify attestation."
+check_status "Failed to verify attestation."

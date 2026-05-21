@@ -139,8 +139,7 @@ def run(test, params, env):
         # acceptable status: OK(0), REBOOT(1)
         if status > 1:
             test.error(
-                "Failed to uninstall driver '%s', details:\n"
-                "%s" % (driver_name, output)
+                "Failed to uninstall driver '%s', details:\n%s" % (driver_name, output)
             )
 
         if params.get_boolean("need_destroy"):
@@ -191,7 +190,7 @@ def run(test, params, env):
 
         installed_any |= True
     if not installed_any:
-        test.error("Failed to find target devices " "by hwids: '%s'" % device_hwid)
+        test.error("Failed to find target devices by hwids: '%s'" % device_hwid)
 
     error_context.context("Verifying target driver", test.log.info)
     session = vm.reboot(session)
@@ -199,8 +198,12 @@ def run(test, params, env):
 
     ver_list = _pnpdrv_info(session, device_name, ["DriverVersion"])
     if expected_ver not in ver_list:
-        test.fail(
-            "The expected driver version is '%s', but "
-            "found '%s'" % (expected_ver, ver_list)
+        # Windows 11 cannot disable Windows Update, which can cause drivers to
+        # sometimes update to newer versions. However, this error is not serious
+        # and can be reported as a warning message.
+        LOG_JOB.warning(
+            "The expected driver version is '%s', but found '%s'",
+            expected_ver,
+            ver_list,
         )
     session.close()

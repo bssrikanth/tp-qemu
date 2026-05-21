@@ -17,10 +17,8 @@ class SyntaxCheckError(Exception):
         self.output = output
 
     def __str__(self):
-        return (
-            'The ansible-playbook command "{}" cannot pass syntax check: ' "{}".format(
-                self.cmd, self.output
-            )
+        return 'The ansible-playbook command "{}" cannot pass syntax check: {}'.format(
+            self.cmd, self.output
         )
 
 
@@ -112,12 +110,11 @@ class PlaybookExecutor(Expect):
             lambda: not self.is_alive(),
             timeout,
             step=step_time,
-            text="Waiting for the ansible-playbook process to " "complete...",
+            text="Waiting for the ansible-playbook process to complete...",
         ):
             self.kill()
             raise ExecutorTimeoutError(
-                "ansible-playbook cannot complete all "
-                "tasks within the expected time."
+                "ansible-playbook cannot complete all tasks within the expected time."
             )
         LOG_JOB.info("ansible-playbook execution is completed.")
 
@@ -147,7 +144,7 @@ def check_ansible_playbook(params):
         """
         if packages is None:
             packages = ["ansible"]
-        install_cmd = f"{sys.executable} -m pip install {' '.join(packages)}"
+        install_cmd = f"{sys.executable} -m pip install --user {' '.join(packages)}"
         status, output = process.getstatusoutput(install_cmd, verbose=True)
         if status != 0:
             LOG_JOB.error("Install python packages failed as: %s", output)

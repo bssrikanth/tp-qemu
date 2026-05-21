@@ -123,7 +123,7 @@ fi
 git clone "$REPO_URL" snpguest
 check_status "Failed to clone snpguest repository"
 [ -d "snpguest" ] || { echo "Error: snpguest directory not found"; exit 1; }
-cd snpguest
+cd snpguest || { echo "Error: Failed to enter snpguest directory"; exit 1; }
 
 if [ -n "$TAG" ]; then
     echo "Checking out tag: $TAG..."

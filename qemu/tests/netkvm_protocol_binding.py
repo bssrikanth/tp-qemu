@@ -29,7 +29,7 @@ def run(test, params, env):
     vm = env.get_vm(params["main_vm"])
     session = vm.wait_for_login(timeout=timeout)
     error_context.context(
-        "Check if the driver is installed and " "verified", test.log.info
+        "Check if the driver is installed and verified", test.log.info
     )
     driver_verifier = params["driver_verifier"]
     session = utils_test.qemu.windrv_check_running_verifier(
@@ -70,8 +70,9 @@ def run(test, params, env):
     except ShellTimeoutError:
         send_key(vm, key_to_install_driver)
     if utils_misc.wait_for(
-        lambda: params["check_info"]
-        in session.cmd_output(params["check_installation_cmd"]),
+        lambda: (
+            params["check_info"] in session.cmd_output(params["check_installation_cmd"])
+        ),
         30,
         15,
         5,

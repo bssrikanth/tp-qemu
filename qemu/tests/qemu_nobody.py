@@ -53,7 +53,6 @@ def run(test, params, env):
     error_context.context("Run the qemu as user '%s'" % exec_username)
     test.log.info("The user %s :uid='%s', gid='%s'", exec_username, exec_uid, exec_gid)
 
-    params["extra_params"] = " -runas %s" % exec_username
     params["start_vm"] = "yes"
     env_process.preprocess_vm(test, params, env, params.get("main_vm"))
     vm = env.get_vm(params["main_vm"])
@@ -61,7 +60,7 @@ def run(test, params, env):
     failures = []
     for pid in process.get_children_pids(vm.get_shell_pid()):
         error_context.context(
-            "Get the process '%s' u/gid, using 'cat " "/proc/%s/status'" % (pid, pid),
+            "Get the process '%s' u/gid, using 'cat /proc/%s/status'" % (pid, pid),
             test.log.info,
         )
         qemu_ugid = get_ugid_from_processid(pid)

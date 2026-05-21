@@ -45,10 +45,11 @@ def run(test, params, env):
     :param env: Dictionary with test environment.
     """
 
-    def _pin_vm_threads(node):
+    def _pin_vm_threads(vm, node):
         """
         pin guest vcpu and vhost threads to cpus of a numa node repectively
 
+        :param vm: the VM object to pin threads for
         :param node: which numa node to pin
         """
         if node:
@@ -66,7 +67,7 @@ def run(test, params, env):
         # print numa information on host and pinning vhost and vcpus to cpus
         process.system_output("numactl --hardware")
         process.system_output("numactl --show")
-        _pin_vm_threads(params.get("numa_node"))
+        _pin_vm_threads(vm, params.get("numa_node"))
         guest_ver = session_serial.cmd_output(guest_ver_cmd)
         result_file.write("### guest-kernel-ver :%s" % guest_ver)
 
@@ -162,5 +163,5 @@ def run(test, params, env):
             vdpa_net_test.remove_dev(params.get("netdst_nic2"))
             vdpa_net_test.cleanup()
         error_context.context(
-            "Verify Host and guest kernel no error" "and call trace", test.log.info
+            "Verify Host and guest kernel no errorand call trace", test.log.info
         )

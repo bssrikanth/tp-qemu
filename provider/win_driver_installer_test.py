@@ -6,9 +6,11 @@ import time
 
 from avocado.utils import process
 from virttest import error_context, utils_disk, utils_misc, utils_net
+from virttest.utils_misc import normalize_data_size
 
-from provider import virtio_fs_utils, win_driver_utils
+from provider import virtio_fs_utils, virtio_mem_utils, win_driver_utils
 from provider.storage_benchmark import generate_instance
+from provider.vioinput_basic import key_tap_test as vioinput_test  # noqa: F401
 from qemu.tests.virtio_serial_file_transfer import transfer_data
 
 LOG_JOB = logging.getLogger("avocado.test")
@@ -25,6 +27,7 @@ driver_name_list = [
     "netkvm",
     "vioinput",
     "fwcfg",
+    "viomem",
 ]
 
 device_hwid_list = [
@@ -38,6 +41,7 @@ device_hwid_list = [
     '"PCI\\VEN_1AF4&DEV_1000" "PCI\\VEN_1AF4&DEV_1041"',
     '"PCI\\VEN_1AF4&DEV_1052"',
     '"ACPI\\VEN_QEMU&DEV_0002"',
+    r'"PCI\VEN_1AF4&DEV_1002" "PCI\VEN_1AF4&DEV_1058"',
 ]
 
 device_name_list = [
@@ -51,6 +55,7 @@ device_name_list = [
     "Red Hat VirtIO Ethernet Adapter",
     "VirtIO Input Driver",
     "QEMU FwCfg Device",
+    "VirtIO Viomem Driver",
 ]
 
 
@@ -71,9 +76,7 @@ def install_gagent(session, test, qemu_ga_pkg, gagent_install_cmd, gagent_pkg_in
     gagent_install_cmd = gagent_install_cmd % qemu_ga_pkg_path
     s_inst, o_inst = session.cmd_status_output(gagent_install_cmd)
     if s_inst != 0:
-        test.fail(
-            "qemu-guest-agent install failed," " the detailed info:\n%s." % o_inst
-        )
+        test.fail("qemu-guest-agent install failed, the detailed info:\n%s." % o_inst)
     gagent_version = session.cmd_output(gagent_pkg_info_cmd).split()[-2]
     return gagent_version
 
@@ -104,6 +107,9 @@ def win_uninstall_all_drivers(session, test, params):
     for driver_name, device_name, device_hwid in zip(
         driver_name_list, device_name_list, device_hwid_list
     ):
+        if params.get("boot_with_viomem", "no") == "no":
+            if driver_name == "viomem":
+                continue
         win_driver_utils.uninstall_driver(
             session, test, devcon_path, driver_name, device_name, device_hwid
         )
@@ -148,7 +154,7 @@ def win_installer_test(session, test, params):
     :param params: the dict used for parameters.
     """
     error_context.context(
-        "Check if virtio-win-guest-too.exe " "is signed by redhat", LOG_JOB.info
+        "Check if virtio-win-guest-too.exe is signed by redhat", LOG_JOB.info
     )
     status = session.cmd_status(params["signed_check_cmd"])
     if status != 0:
@@ -173,6 +179,9 @@ def driver_check(session, test, params):
         driver_name_list = [params["driver_name"]]
         device_name_list = [params["device_name"]]
     for driver_name, device_name in zip(driver_name_list, device_name_list):
+        if params.get("boot_with_viomem", "no") == "no":
+            if driver_name == "viomem":
+                continue
         error_context.context("%s Driver Check" % driver_name, LOG_JOB.info)
         inf_path = win_driver_utils.get_driver_inf_path(
             session, test, media_type, driver_name
@@ -259,7 +268,7 @@ def rng_test(test, params, vm):
     error_context.context("Read virtio-rng device to get random number", LOG_JOB.info)
     output = session.cmd_output(read_rng_cmd)
     if len(re.findall(r"0x\w", output, re.M)) < 2:
-        test.fail("Unable to read random numbers " "from guest: %s" % output)
+        test.fail("Unable to read random numbers from guest: %s" % output)
 
 
 @error_context.context_aware
@@ -414,3 +423,29 @@ def fwcfg_test(test, params, vm):
         process.system("rm -rf %s" % dump_file, shell=True)
         if dump_size == 0:
             test.fail("The dump file is empty")
+
+
+def viomem_test(test, params, vm):
+    """
+    Grow/shrink virtio-mem device.
+
+    :param test: kvm test object.
+    :param params: the dict used for parameters.
+    :param vm: vm object.
+    """
+    threshold = params.get_numeric("threshold", target_type=float)
+    for i, vmem_dev in enumerate(
+        vm.devices.get_by_params({"driver": "virtio-mem-pci"})
+    ):
+        device_id = vmem_dev.get_qid()
+        requested_size_vmem = params.get("requested-size_test_vmem%d" % i)
+        for requested_size in requested_size_vmem.split():
+            req_size_normalized = int(float(normalize_data_size(requested_size, "B")))
+            vm.monitor.qom_set(device_id, "requested-size", req_size_normalized)
+            time.sleep(30)
+            # FIXME: workaround the problem that the memory value not accurate
+            # after shrink/grow the viomem device
+            vm.reboot()
+            virtio_mem_utils.check_memory_devices(
+                device_id, requested_size, threshold, vm, test
+            )

@@ -28,7 +28,7 @@ class BallooningTest(MemoryBaseTest):
             else:
                 sleep_time = 90
             self.test.log.info(
-                "Waiting %d seconds for guest's " "applications up", sleep_time
+                "Waiting %d seconds for guest's applications up", sleep_time
             )
             time.sleep(sleep_time)
             self.params["balloon_test_setup_ready"] = True
@@ -56,7 +56,7 @@ class BallooningTest(MemoryBaseTest):
                     ballooned_mem = ballooned_mem / (1024**2)
             else:
                 self.test.log.info(
-                    "could not get balloon_memory, cause " "vm.monitor is None"
+                    "could not get balloon_memory, cause vm.monitor is None"
                 )
                 return 0
         except qemu_monitor.MonitorError as emsg:
@@ -145,7 +145,7 @@ class BallooningTest(MemoryBaseTest):
         check_mem_ratio = float(self.params.get("check_mem_ratio", 0.1))
         check_mem_diff = float(self.params.get("check_mem_diff", 150))
         error_context.context(
-            "Get memory from guest aligned" " with %s." % keyname, self.test.log.info
+            "Get memory from guest aligned with %s." % keyname, self.test.log.info
         )
         if keyname == "stat-free-memory":
             guest_mem = self.get_guest_free_mem(self.vm)
@@ -187,7 +187,7 @@ class BallooningTest(MemoryBaseTest):
 
         stat_enabled = memory_stat_qmp != mem_stat_disabled
         if stat_enabled != enabled:
-            self.test.fail("Memory statistics reporting is not working as" " expected")
+            self.test.fail("Memory statistics reporting is not working as expected")
         elif enabled:
             self._memory_stats_compare(keyname, memory_stat_qmp)
 
@@ -211,7 +211,7 @@ class BallooningTest(MemoryBaseTest):
                 and new_mem != self.get_ballooned_memory()
             ):
                 raise exceptions.TestFail(
-                    "Balloon memory fail with error" " message: %s" % e
+                    "Balloon memory fail with error message: %s" % e
                 )
         if new_mem > self.ori_mem:
             compare_mem = self.ori_mem
@@ -229,8 +229,7 @@ class BallooningTest(MemoryBaseTest):
         )
         if status is None:
             raise exceptions.TestFail(
-                "Failed to balloon memory to expect"
-                " value during %ss" % balloon_timeout
+                "Failed to balloon memory to expect value during %ss" % balloon_timeout
             )
 
     def run_balloon_sub_test(self, test, params, env, test_tag):
@@ -345,12 +344,19 @@ class BallooningTest(MemoryBaseTest):
                 return None
             return output
 
-        if self.test_round < 1:
-            self.memory_check("before ballooning test", 0)
-
         params_tag = self.params.object_params(tag)
         self.pre_mem = self.get_ballooned_memory()
         self.pre_gmem = self.get_memory_status()
+
+        self.test.log.info(
+            "Before balloon test,memory inside guest is %s\n"
+            "memory from qemu monitor is %s",
+            self.pre_gmem,
+            self.pre_mem,
+        )
+        if self.test_round < 1:
+            self.memory_check("before ballooning test", 0)
+
         self.balloon_memory(expect_mem)
         self.test_round += 1
         ballooned_memory = expect_mem - self.pre_mem
@@ -538,7 +544,7 @@ class BallooningTestWin(BallooningTest):
                           uninstall/stop
         """
         error_context.context(
-            "Check Balloon Service status before install" "service", self.test.log.info
+            "Check Balloon Service status before installservice", self.test.log.info
         )
         output = self.operate_balloon_service(session, "status")
         if re.search("running", output.lower(), re.M):
@@ -649,15 +655,25 @@ def run(test, params, env):
             session = balloon_test.vm.wait_for_login()
             session.cmd_output_safe(memhog_cmd)
             res2 = float(normalize_data_size(process.getoutput(get_res_cmd)))
-            time.sleep(30)
-            res3 = float(normalize_data_size(process.getoutput(get_res_cmd)))
+            release_timeout = int(params.get("balloon_release_time", 30))
+
+            def res_recovered():
+                res3 = float(normalize_data_size(process.getoutput(get_res_cmd)))
+                test.log.debug("Polling RES: %.2fM", res3)
+                return abs(res3 - res1) <= res1 * 0.1
+
+            if not utils_misc.wait_for(res_recovered, timeout=release_timeout, step=5):
+                test.fail("QEMU should consume same memory as before memhog")
+            res4 = float(normalize_data_size(process.getoutput(get_res_cmd)))
             test.log.info(
-                "The RES values are %sM, %sM, and %sM sequentially", res1, res2, res3
+                "The RES values are %sM, %sM, and %sM sequentially", res1, res2, res4
             )
             if res2 - res1 < consumed_mem * 0.5:
                 test.error("QEMU should consume more memory")
-            if res3 - res1 > res1 * 0.1:
-                test.fail("QEMU should consume same memory as before memhog ")
+            catch_call_trace_cmd = params.get("catch_call_trace")
+            call_trace = session.cmd_output_safe(catch_call_trace_cmd)
+            if call_trace:
+                test.fail("There's a Call trace:%s" % call_trace)
         # for windows guest, disable/uninstall driver to get memory leak based on
         # driver verifier is enabled
         if params.get("os_type") == "windows":
