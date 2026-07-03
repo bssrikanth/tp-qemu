@@ -576,39 +576,6 @@ def run(test, params, env):
     else:
         test.cancel(f"Host support for {cvm_type} capability check failed.")
 
-    # IGVM VMSA sets DebugSwap; host needs kvm_amd debug_swap=1
-    debug_swap_path = params.get(
-        "svsm_debug_swap_path", "/sys/module/kvm_amd/parameters/debug_swap"
-    )
-    debug_swap_ok_values = params.objects("svsm_debug_swap_status") or [
-        "Y", "y", "1",
-    ]
-    if not os.path.exists(debug_swap_path):
-        test.cancel(
-            "SVSM precondition not met: %s not found. Either kvm_amd is "
-            "not loaded, or this kernel does not expose the debug_swap "
-            "module parameter (required: kvm_amd built with "
-            "CONFIG_KVM_AMD_SEV and a recent enough kernel). Load with "
-            "`modprobe kvm_amd debug_swap=1`." % debug_swap_path
-        )
-    with open(debug_swap_path) as fh:
-        debug_swap_value = fh.read().strip()
-    if debug_swap_value not in debug_swap_ok_values:
-        test.cancel(
-            "SVSM precondition not met: %s = %r (expected one of %r). "
-            "The COCONUT-SVSM IGVM bundle requires kvm_amd debug_swap=1; "
-            "without it KVM rejects the IGVM-supplied VMSA "
-            "(check_sev_features: VMSA contains unsupported "
-            "sev_features ... / failed to initialize kvm: Operation not "
-            "permitted). Reload kvm_amd with the parameter set, e.g.: "
-            "`modprobe -r kvm_amd && modprobe kvm_amd debug_swap=1` "
-            "(persist via /etc/modprobe.d/ for reboots)."
-            % (debug_swap_path, debug_swap_value, debug_swap_ok_values)
-        )
-    test.log.info(
-        "SVSM precondition OK: %s = %r.", debug_swap_path, debug_swap_value,
-    )
-
     enable_igvm = params.get("enable_igvm") == "yes"
     if not enable_igvm:
         test.cancel(
