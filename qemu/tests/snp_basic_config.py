@@ -392,21 +392,10 @@ def run(test, params, env):
         if int(res["sockets"]) != 1:
             test.cancel("Host cpu has more than 1 socket, skip the case.")
 
-    family_id = int(cpu.get_family())
-    model_id = int(cpu.get_model())
-    dict_cpu = {
-        "milan": [25, 0, 15],
-        "genoa": [25, 16, 31],
-        "bergamo": [25, 160, 175],
-        "turin": [26, 0, 31],
-    }
-    host_cpu_model = None
-    for platform, values in dict_cpu.items():
-        if values[0] == family_id:
-            if model_id >= values[1] and model_id <= values[2]:
-                host_cpu_model = platform
-    if not host_cpu_model:
-        test.cancel("Unsupported platform. Requires milan or above.")
+    try:
+        host_cpu_model = vt_cpu.get_amd_platform(min_platform="milan")
+    except OSError as e:
+        test.cancel(str(e))
     test.log.info("Detected platform: %s", host_cpu_model)
     vm_name = params["main_vm"]
     vm = env.get_vm(vm_name)

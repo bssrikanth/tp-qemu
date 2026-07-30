@@ -3,6 +3,7 @@ import os
 from avocado.utils import cpu, process
 from virttest import error_context
 from virttest.utils_misc import verify_dmesg
+from virttest.vt_utils import cpu as vt_cpu
 
 
 @error_context.context_aware
@@ -33,11 +34,10 @@ def run(test, params, env):
     if not os.path.isfile(biospath):
         test.cancel("bios_path not exist %s." % biospath)
 
-    family_id = cpu.get_family()
-    model_id = cpu.get_model()
-    dict_cpu = {"251": "milan", "2517": "genoa", "2617": "turin"}
-    key = str(family_id) + str(model_id)
-    host_cpu_model = dict_cpu.get(key, "unknown")
+    try:
+        host_cpu_model = vt_cpu.get_amd_platform(min_platform="milan")
+    except OSError as e:
+        test.cancel(str(e))
 
     vm_name = params["main_vm"]
     vm = env.get_vm(vm_name)

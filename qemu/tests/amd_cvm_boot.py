@@ -3,6 +3,7 @@ import os
 from avocado.utils import cpu
 from virttest import error_context
 from virttest.utils_misc import verify_dmesg
+from virttest.vt_utils import cpu as vt_cpu
 
 
 @error_context.context_aware
@@ -67,21 +68,10 @@ def run(test, params, env):
         biospath = params.get("bios_path")
         if not biospath or not os.path.isfile(biospath):
             test.cancel("bios_path not exist %s." % biospath)
-    family_id = int(cpu.get_family())
-    model_id = int(cpu.get_model())
-    supported_cpus = {
-            "milan": [25, 0, 15],
-            "genoa": [25, 16, 31],
-            "bergamo": [25, 160, 175],
-            "turin": [26, 0, 31]
-            }
-    host_platform = None
-    for platform, values in supported_cpus.items():
-        if values[0] == family_id:
-            if model_id >= values[1] and model_id <= values[2]:
-                host_platform = platform
-    if not host_platform:
-        test.cancel(f"Unsupported platform. Requires Milan or above.")
+    try:
+        host_platform = vt_cpu.get_amd_platform(min_platform="milan")
+    except OSError as e:
+        test.cancel(str(e))
     test.log.info(f"Detected platform: {host_platform}")
     vm_name = params["main_vm"]
     vm = env.get_vm(vm_name)
