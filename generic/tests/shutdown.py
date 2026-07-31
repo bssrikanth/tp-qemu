@@ -18,6 +18,7 @@ def run(test, params, env):
     :param env: Dictionary with test environment
     """
     timeout = int(params.get("login_timeout", 360))
+    restart_network = params.get("restart_network_on_login", "no") == "yes"
     shutdown_count = int(params.get("shutdown_count", 1))
     shutdown_method = params.get("shutdown_method", "shell")
     sleep_time = float(params.get("sleep_before_powerdown", 10))
@@ -27,7 +28,7 @@ def run(test, params, env):
     for i in range(shutdown_count):
         vm = env.get_vm(params["main_vm"])
         vm.verify_alive()
-        session = vm.wait_for_login(timeout=timeout)
+        session = vm.wait_for_login(timeout=timeout, restart_network=restart_network)
         error_context.base_context(
             "shutting down the VM %s/%s" % (i + 1, shutdown_count), test.log.info
         )
