@@ -19,21 +19,30 @@ def run(test, params, env):
 
     timeout = float(params.get("login_timeout", 240))
     serial_login = params.get("serial_login", "no") == "yes"
+    restart_network = params.get("restart_network_on_login", "no") == "yes"
     vms = env.get_all_vms()
     for vm in vms:
         error_context.context("Try to log into guest '%s'." % vm.name, test.log.info)
         if serial_login:
-            session = vm.wait_for_serial_login(timeout=timeout)
+            session = vm.wait_for_serial_login(
+                timeout=timeout, restart_network=restart_network
+            )
         else:
-            session = vm.wait_for_login(timeout=timeout)
+            session = vm.wait_for_login(
+                timeout=timeout, restart_network=restart_network
+            )
         session.close()
 
     if params.get("rh_perf_envsetup_script"):
         for vm in vms:
             if serial_login:
-                session = vm.wait_for_serial_login(timeout=timeout)
+                session = vm.wait_for_serial_login(
+                    timeout=timeout, restart_network=restart_network
+                )
             else:
-                session = vm.wait_for_login(timeout=timeout)
+                session = vm.wait_for_login(
+                    timeout=timeout, restart_network=restart_network
+                )
             utils_test.service_setup(vm, session, test.virtdir)
             session.close()
     if params.get("reboot_method"):
@@ -43,9 +52,13 @@ def run(test, params, env):
                 time.sleep(int(params.get("sleep_before_reset", 10)))
             # Reboot the VM
             if serial_login:
-                session = vm.wait_for_serial_login(timeout=timeout)
+                session = vm.wait_for_serial_login(
+                    timeout=timeout, restart_network=restart_network
+                )
             else:
-                session = vm.wait_for_login(timeout=timeout)
+                session = vm.wait_for_login(
+                    timeout=timeout, restart_network=restart_network
+                )
             for i in range(int(params.get("reboot_count", 1))):
                 session = vm.reboot(
                     session, params["reboot_method"], 0, timeout, serial_login
