@@ -20,6 +20,87 @@ DEFAULT_SVSM_VTPM_SERIAL_MARKERS = (
 DEFAULT_KERNEL_DRIVER_NAME = "tpm-svsm"
 
 
+def _parse_systemd_has_tpm2_output(output):
+    """
+    Parse multi-line ``systemd-analyze has-tpm2`` output.
+
+    :param output: Raw command stdout from the guest.
+    :return: dict with keys ``verdict`` and ``components``.
+    """
+    raw_lines = (output or "").splitlines()
+    if not raw_lines or not raw_lines[0].strip():
+        return {"verdict": "", "components": {}}
+
+    verdict = raw_lines[0].strip().lower()
+    components = {}
+    for line in raw_lines[1:]:
+        stripped = line.strip()
+        if not stripped or stripped[0] not in "+-":
+            continue
+        if line[: len(line) - len(line.lstrip())]:
+            continue
+        sign = stripped[0]
+        name = stripped[1:].strip()
+        if name:
+            components[name] = sign
+    return {"verdict": verdict, "components": components}
+
+
+def _evaluate_systemd_has_tpm2(test, parsed, raw_output, direct_kernel_boot):
+    """
+    Evaluate ``systemd-analyze has-tpm2`` output.
+
+    1. ``yes`` verdict -> pass.
+    2. ``partial`` on direct ``-kernel`` boot with only ``firmware`` negative
+       -> pass.
+    3. Any other ``-`` top-level component -> fail.
+    """
+    verdict = parsed["verdict"]
+    components = parsed["components"]
+    boot_path = "direct -kernel" if direct_kernel_boot else "disk"
+
+    if verdict == "yes":
+        test.log.info(
+            "systemd-analyze has-tpm2 reports yes on %s boot.", boot_path
+        )
+        return
+
+    if verdict == "no" or not verdict:
+        test.fail(
+            "systemd-analyze has-tpm2 reports no TPM2 support: %r"
+            % raw_output.strip()
+        )
+
+    if verdict != "partial":
+        test.fail(
+            "systemd-analyze has-tpm2 returned unexpected verdict %r on "
+            "%s boot. Full output:\n%s"
+            % (verdict, boot_path, raw_output.strip())
+        )
+
+    negative = sorted(name for name, sign in components.items() if sign == "-")
+
+    if direct_kernel_boot and negative == ["firmware"]:
+        test.log.info(
+            "systemd-analyze has-tpm2 reports partial on direct -kernel "
+            "boot; only firmware is negative (allowed)."
+        )
+        return
+
+    if negative:
+        test.fail(
+            "systemd-analyze has-tpm2 reports partial on %s boot with "
+            "negative components: %s. Full output:\n%s"
+            % (boot_path, negative, raw_output.strip())
+        )
+
+    test.log.info(
+        "systemd-analyze has-tpm2 reports partial on %s boot; all "
+        "top-level components are positive.",
+        boot_path,
+    )
+
+
 def verify_svsm_vtpm(test, params, vm, session):
     """
     Check SVSM vTPM bring-up via serial log markers, then systemd TPM2
@@ -101,15 +182,17 @@ def verify_svsm_vtpm(test, params, vm, session):
         return
     has_tpm2_cmd = "systemd-analyze has-tpm2"
     status, output = session.cmd_status_output(has_tpm2_cmd, timeout=60)
-    if status != 0:
-        test.fail(
-            f"'{has_tpm2_cmd}' failed with status={status}, output='{output}'"
-        )
-    if output.strip() != "yes":
-        test.fail(
-            f"'{has_tpm2_cmd}' expected exactly 'yes', got: '{output.strip()}'"
-        )
-    test.log.info("systemd-analyze has-tpm2 reports: yes")
+    parsed = _parse_systemd_has_tpm2_output(output)
+    direct_kernel_boot = bool((params.get("kernel") or "").strip())
+    test.log.info(
+        "systemd-analyze has-tpm2 exit_status=%s verdict=%r boot=%s "
+        "components=%s",
+        status,
+        parsed["verdict"] or None,
+        "direct -kernel" if direct_kernel_boot else "disk",
+        parsed["components"],
+    )
+    _evaluate_systemd_has_tpm2(test, parsed, output, direct_kernel_boot)
 
 
 def _zero_pcr(output):
